@@ -1,0 +1,14 @@
+download/
+install/
+lib/
+model_config/*
+!model_config/.gitkeep
+build/
+.cache/
+*.swp
+.DS_Store/
+*.o
+*.exe
+*.raw
+*.wav
+v1-demo

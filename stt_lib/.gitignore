@@ -1,0 +1,7 @@
+external/whisper.cpp
+.cache/
+.DS_Store
+build/
+models/*
+!models/.gitkeep
+*.swp

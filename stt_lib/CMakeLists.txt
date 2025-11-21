@@ -10,7 +10,17 @@ find_package(Threads REQUIRED)
 
 if (WHISPER_SDL2)
     find_package(SDL2 REQUIRED)
-    string(STRIP "${SDL2_LIBRARIES}" SDL2_LIBRARIES)
+    
+    if(NOT SDL2_FOUND AND UNIX AND NOT APPLE)
+      find_package(PkgConfig QUIET)
+      if(PkgConfig_FOUND)
+        pkg_check_modules(SDL2 IMPORTED_TARGET sdl2)
+      endif()
+    endif()
+
+    if(NOT SDL2_FOUND)
+      message(FATAL_ERROR "SDL2 wasn't found\n")
+    endif()
 endif()
 
 set(TARGET common)

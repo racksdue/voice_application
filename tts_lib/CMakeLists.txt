@@ -157,3 +157,17 @@ install(
     DIRECTORY ${ESPEAKNG_DATA_SRC}
     DESTINATION ${CMAKE_INSTALL_PREFIX}
 )
+
+# -- Link the demo
+
+add_executable(tts_demo
+    demo.cpp
+)
+
+target_include_directories(tts_demo PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(tts_demo PRIVATE
+    piper
+)

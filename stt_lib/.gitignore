@@ -1,4 +1,3 @@
-external/whisper.cpp
 .cache/
 .DS_Store
 build/

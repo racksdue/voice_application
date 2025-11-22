@@ -1,5 +1,18 @@
 #pragma once
-
 #include <string>
 
-void play_audio(const std::string &text);
+class TTSEngine {
+public:
+  TTSEngine();
+  ~TTSEngine();
+
+  TTSEngine(const TTSEngine &) = delete;
+  TTSEngine &operator=(const TTSEngine &) = delete;
+
+  bool is_initialized() const;
+  void play(const std::string &text);
+
+private:
+  struct Impl;
+  Impl *impl;
+};

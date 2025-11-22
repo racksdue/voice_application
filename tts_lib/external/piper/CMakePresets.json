@@ -1,29 +1,35 @@
 {
-  "version": 3,
-  "cmakeMinimumRequired": { "major": 3, "minor": 20 },
+  "version": 10,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 26
+  },
+
   "configurePresets": [
     {
       "name": "release",
+      "displayName": "Release",
       "generator": "Ninja",
       "binaryDir": "build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "WHISPER_SDL2": "ON",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/install",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
     {
       "name": "debug",
+      "displayName": "Debug",
       "generator": "Ninja",
       "binaryDir": "build/debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "WHISPER_SDL2": "ON",
-        "BUILD_STT_EXAMPLES": "ON",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/install",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     }
   ],
+
   "buildPresets": [
     {
       "name": "release",

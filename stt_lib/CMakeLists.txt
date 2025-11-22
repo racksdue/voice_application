@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.26)
-project(tts_lib LANGUAGES CXX)
+project(stt_lib LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,21 +12,17 @@ if (WHISPER_SDL2)
     find_package(SDL2 REQUIRED)
     
     if(NOT SDL2_FOUND AND UNIX AND NOT APPLE)
-      find_package(PkgConfig QUIET)
-      if(PkgConfig_FOUND)
-        pkg_check_modules(SDL2 IMPORTED_TARGET sdl2)
-      endif()
+        find_package(PkgConfig QUIET)
+        if(PkgConfig_FOUND)
+            pkg_check_modules(SDL2 IMPORTED_TARGET sdl2)
+        endif()
     endif()
-
     if(NOT SDL2_FOUND)
-      message(FATAL_ERROR "SDL2 wasn't found\n")
+        message(FATAL_ERROR "SDL2 wasn't found\n")
     endif()
 endif()
 
-set(TARGET common)
-
 unset(COMMON_EXTRA_LIBS)
-
 if (WHISPER_FFMPEG)
     find_package(FFmpeg REQUIRED)
     include_directories(${FFMPEG_INCLUDE_DIRS})
@@ -35,7 +31,7 @@ if (WHISPER_FFMPEG)
     set(COMMON_SOURCES_FFMPEG external/shared/ffmpeg-transcode.cpp)
 endif()
 
-add_library(${TARGET} STATIC
+add_library(common STATIC
     external/shared/common.h
     external/shared/common.cpp
     external/shared/common-ggml.h
@@ -47,41 +43,47 @@ add_library(${TARGET} STATIC
     ${COMMON_SOURCES_FFMPEG}
 )
 
-target_link_libraries(${TARGET} PRIVATE whisper ${COMMON_EXTRA_LIBS} ${CMAKE_DL_LIBS})
-set_target_properties(${TARGET} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(common PRIVATE whisper ${COMMON_EXTRA_LIBS} ${CMAKE_DL_LIBS})
+set_target_properties(common PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if (WHISPER_SDL2)
-    set(TARGET common-sdl)
-    add_library(${TARGET} STATIC
+    add_library(common-sdl STATIC
         external/shared/common-sdl.h
         external/shared/common-sdl.cpp
     )
-    target_include_directories(${TARGET} PUBLIC ${SDL2_INCLUDE_DIRS})
-    target_link_libraries(${TARGET} PRIVATE ${SDL2_LIBRARIES})
-    set_target_properties(${TARGET} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_include_directories(common-sdl PUBLIC ${SDL2_INCLUDE_DIRS})
+    target_link_libraries(common-sdl PRIVATE ${SDL2_LIBRARIES})
+    set_target_properties(common-sdl PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endif()
 
-add_executable(whisper_stream src/whisper_stream.cpp)
-
-target_include_directories(whisper_stream PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/external/shared
+add_library(stt_lib STATIC
+    stt_lib.cpp
 )
 
-target_link_libraries(whisper_stream PRIVATE common whisper ${CMAKE_THREAD_LIBS_INIT})
+target_include_directories(stt_lib
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/shared
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/whisper.cpp/include
+)
+
+target_link_libraries(stt_lib
+    PUBLIC
+        common
+        whisper
+)
 
 if (WHISPER_SDL2)
-    target_include_directories(whisper_stream PRIVATE ${SDL2_INCLUDE_DIRS})
-    target_link_libraries(whisper_stream PRIVATE common-sdl ${SDL2_LIBRARIES})
+    target_link_libraries(stt_lib PUBLIC common-sdl)
 endif()
 
-find_package(OpenCL QUIET)
-if(OpenCL_FOUND)
-    target_link_libraries(whisper_stream PRIVATE OpenCL::OpenCL)
-endif()
-
-target_include_directories(whisper PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/external/shared
-    ${CMAKE_CURRENT_SOURCE_DIR}/external/whisper.cpp/include
+target_compile_definitions(stt_lib
+    PRIVATE
+        STT_MODEL_DIR="${CMAKE_CURRENT_SOURCE_DIR}/models"
 )
 
-install(TARGETS whisper_stream RUNTIME)
+option(BUILD_STT_EXAMPLES "Build STT example programs" OFF)
+if(BUILD_STT_EXAMPLES)
+    add_subdirectory(example)
+endif()

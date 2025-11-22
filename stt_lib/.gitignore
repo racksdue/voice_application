@@ -3,5 +3,5 @@ external/whisper.cpp
 .DS_Store
 build/
 models/*
-!models/.gitkeep
+!models/README.md
 *.swp

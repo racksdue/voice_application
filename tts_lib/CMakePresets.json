@@ -13,7 +13,6 @@
       "binaryDir": "build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_INSTALL_PREFIX": "${sourceDir}/install",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
@@ -24,7 +23,7 @@
       "binaryDir": "build/debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_INSTALL_PREFIX": "${sourceDir}/install",
+        "BUILD_TTS_EXAMPLES": "ON",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     }

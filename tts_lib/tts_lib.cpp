@@ -8,7 +8,7 @@
 static piper_synthesizer *g_synth = nullptr;
 
 #ifndef TTS_MODEL_DIR
-#define TTS_MODEL_DIR "model_config"
+#define TTS_MODEL_DIR "models"
 #endif
 
 #ifndef TTS_ESPEAK_DIR

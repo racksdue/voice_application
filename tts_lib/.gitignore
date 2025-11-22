@@ -1,8 +1,8 @@
 download/
 install/
 lib/
-model_config/*
-!model_config/.gitkeep
+models/*
+!models/README.md
 build/
 .cache/
 *.swp

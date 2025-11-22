@@ -6,8 +6,8 @@
 
 int main() {
     auto *synth = piper_create(
-        "model_config/en_US-amy-medium.onnx",
-        "model_config/en_US-amy-medium.onnx.json",
+        "models/en_US-amy-medium.onnx",
+        "models/en_US-amy-medium.onnx.json",
         "install/espeak-ng-data"
     );
 

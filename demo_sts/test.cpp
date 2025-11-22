@@ -1,36 +1,51 @@
 #include "stt_lib.hpp"
 #include "tts_lib.hpp"
+#include <chrono>
+#include <thread>
 
 int main() {
-  start_stream();
+  TTSEngine tts;
+
+  if (!tts.is_initialized()) {
+    fprintf(stderr, "Initialization failed\n");
+    return 1;
+  }
+
+  STTStream stt;
+  
+  if (!stt.is_initialized()) {
+    fprintf(stderr, "Initialization failed\n");
+    return 1;
+  }
 
   while (true) {
-    if ((listen_for("What is your name?"))) {
-      pause_stream();
-      play_audio("I am a navigation assistant for the blind! To use me say: Start navigation");
-      resume_stream();
+    if (stt.listen_for("What is your name?")) {
+      stt.pause();
+      tts.play("I am a navigation assistant for the blind! To use me say: "
+               "Start navigation");
+      stt.resume();
     }
 
-    if ((listen_for("Start navigation."))) {
-      pause_stream();
-      play_audio("Navigation started. You are en route.");
-      resume_stream();
+    if (stt.listen_for("Start navigation.")) {
+      stt.pause();
+      tts.play("Navigation started. You are en route.");
+      stt.resume();
     }
 
-    if((listen_for("Exit."))){
-      pause_stream();
-      play_audio("Have a nice day user!.");
+    if (stt.listen_for("Exit.")) {
+      stt.pause();
+      tts.play("Have a nice day user!");
       break;
     }
 
-    if((listen_for("What is my name?"))){
-      pause_stream();
-      play_audio("Your name is Steven from ubakala");
-      resume_stream();
+    if (stt.listen_for("What is my name?")) {
+      stt.pause();
+      tts.play("Your name is name");
+      stt.resume();
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  stop_stream();
+
   return 0;
 }

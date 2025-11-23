@@ -1,36 +1,62 @@
 #include "engine_manager.hpp"
-#include "stt_lib.hpp"
-#include "tts_lib.hpp"
 
 int main() {
-  AppManager manager;
+  AppManager sts_engine;
 
-  TTSEngine &tts = manager.get_tts();
-  STTStream &stt = manager.get_stt();
+  TTSEngine &tts = sts_engine.get_tts();
+  STTStream &stt = sts_engine.get_stt();
 
   while (true) {
-    if (stt.listen_for("What is your name?")) {
+    std::string transcription = stt.start_listening();
+
+    if (stt.listen_for(transcription, "What is your name?")) {
       stt.pause();
-      tts.play("I am a navigation assistant for the blind! To use me say: Start navigation");
+      tts.play("I am a navigation assistant for the blind! To use me say: "
+               "Start navigation");
       stt.resume();
-    } else if (stt.listen_for("Start navigation.")) {
+    } else if (stt.listen_for(transcription, "Start navigation")) {
       stt.pause();
-      tts.play("Navigation started. You are en route.");
+      tts.play("Navigation started, you are en route.");
       stt.resume();
-    } else if (stt.listen_for("Exit.")) {
+    } else if (stt.listen_for(transcription, "Exit")) {
       stt.pause();
-      tts.play("Have a nice day, User!");
+      tts.play("Goodbye!");
       break;
-    } else if (stt.listen_for("What is my name?")) {
+    } else if (STTStream::listen_for(transcription, "test speech")) {
       stt.pause();
-      tts.play("Your name is, name");
-      stt.resume();
-    } else if (stt.listen_for("Enter debug mode.")) {
-      stt.pause();
-      tts.play("You are in debug mode. Say: Test cameras, Test sensors, or, Test all.");
+      tts.play(
+          "Testing text to speech engine with extended audio playback. "
+          "The quick brown fox jumps over the lazy dog near the bank of the "
+          "river. "
+          "Pack my box with five dozen liquor jugs for the evening "
+          "celebration. "
+          "How vexingly quick daft zebras jump through the misty morning fog. "
+          "Now testing numerical sequences: one two three four five six seven "
+          "eight nine ten. "
+          "Counting backwards: ten nine eight seven six five four three two "
+          "one zero. "
+          "Testing punctuation and pauses. Comma pause, semicolon pause; colon "
+          "pause: question mark pause? "
+          "Exclamation mark pause! Period pAuSe(). Multiple sentences in "
+          "sequence without interruption. "
+          "The navigation system is designed to assist blind users with "
+          "real time audio feedback. "
+          "It processes voice commands and provides directional guidance "
+          "through spoken instructions. "
+          "Turn left at the next intersection. Continue straight for two "
+          "hundred meters. "
+          "You are approaching your destination on the right side. Proceed "
+          "with caution. "
+          "Testing longer duration audio to verify buffer stability and voice "
+          "quality consistency. "
+          "The system should maintain clear pronunciation throughout extended "
+          "speech sequences. "
+          "No audio artifacts or dropouts should occur during continuous "
+          "playback operations. "
+          "This concludes the text to speech engine stress test. All systems "
+          "nominal. Test complete.");
       stt.resume();
     }
   }
-
   return 0;
 }

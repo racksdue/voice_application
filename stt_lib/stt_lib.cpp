@@ -1,14 +1,13 @@
 #include "stt_lib.hpp"
 #include "common-sdl.h"
 #include "common-whisper.h"
-#include "common.h"
 #include "whisper.h"
 #include <algorithm>
 #include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cstdio>
-#include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -29,11 +28,6 @@ struct whisper_params {
   int32_t beam_size;
   int32_t max_context_tokens;
   int32_t max_retry_attempts;
-
-  float vad_thold;
-  float freq_thold;
-  float vad_energy_thold;
-
   bool translate;
   bool no_fallback;
   bool print_special;
@@ -42,69 +36,9 @@ struct whisper_params {
   bool tinydiarize;
   bool use_gpu;
   bool flash_attn;
-  bool adaptive_vad;
 
   std::string language;
   std::string model;
-};
-
-class AdaptiveVAD {
-private:
-  float threshold;
-  float min_threshold;
-  float max_threshold;
-  std::vector<float> recent_energies;
-  size_t history_size;
-  float adaptation_rate;
-
-  void adapt_threshold() {
-    if (recent_energies.size() < 10)
-      return;
-
-    std::vector<float> sorted = recent_energies;
-    std::sort(sorted.begin(), sorted.end());
-
-    float median = sorted[sorted.size() / 2];
-    float q1 = sorted[sorted.size() / 4];
-    float q3 = sorted[3 * sorted.size() / 4];
-
-    float target = 0.5f + (median - q1) / (q3 - q1 + 0.0001f) * 0.3f;
-
-    threshold = threshold * (1.0f - adaptation_rate) + target * adaptation_rate;
-    threshold = std::max(min_threshold, std::min(max_threshold, threshold));
-  }
-
-public:
-  AdaptiveVAD(float initial_thold = 0.6f, size_t hist_size = 50)
-      : threshold(initial_thold), min_threshold(0.3f), max_threshold(0.8f),
-        history_size(hist_size), adaptation_rate(0.1f) {
-    recent_energies.reserve(history_size);
-  }
-
-  bool detect(const std::vector<float> &audio, int sample_rate, int ms_window,
-              float freq_thold, float energy_thold) {
-    std::vector<float> audio_copy = audio;
-    bool is_speech = ::vad_simple(audio_copy, sample_rate, ms_window, threshold,
-                                  freq_thold, false);
-
-    float energy = 0.0f;
-    for (float sample : audio) {
-      energy += sample * sample;
-    }
-    energy /= audio.size();
-
-    if (energy > energy_thold) {
-      recent_energies.push_back(energy);
-      if (recent_energies.size() > history_size) {
-        recent_energies.erase(recent_energies.begin());
-      }
-      adapt_threshold();
-    }
-
-    return is_speech;
-  }
-
-  float get_threshold() const { return threshold; }
 };
 
 class WhisperContext {
@@ -134,19 +68,16 @@ public:
 
 whisper_params get_default_params() {
   whisper_params params;
-  params.n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
-  params.step_ms = 500;
-  params.length_ms = 10000;
-  params.keep_ms = 200;
+  params.n_threads = std::min(2, (int32_t)std::thread::hardware_concurrency());
+  params.step_ms = 1500;
+  params.length_ms = 4000;
+  params.keep_ms = 300;
   params.capture_id = -1;
   params.max_tokens = 32;
   params.audio_ctx = 0;
   params.beam_size = -1;
-  params.max_context_tokens = 256;
-  params.max_retry_attempts = 3;
-  params.vad_thold = 0.6f;
-  params.freq_thold = 100.0f;
-  params.vad_energy_thold = 0.0001f;
+  params.max_context_tokens = 64;
+  params.max_retry_attempts = 2;
   params.translate = false;
   params.no_fallback = false;
   params.print_special = false;
@@ -155,9 +86,8 @@ whisper_params get_default_params() {
   params.tinydiarize = false;
   params.use_gpu = true;
   params.flash_attn = true;
-  params.adaptive_vad = true;
   params.language = "en";
-  params.model = STT_MODEL_DIR "/ggml-base.en.bin";
+  params.model = STT_MODEL_DIR "/ggml-tiny.en.bin";
   return params;
 }
 
@@ -168,10 +98,17 @@ std::string to_lowercase(const std::string &str) {
   return result;
 }
 
-bool contains_trigger(const std::string &text, const std::string &trigger) {
-  std::string text_lower = to_lowercase(text);
-  std::string trigger_lower = to_lowercase(trigger);
-  return text_lower.find(trigger_lower) != std::string::npos;
+bool simple_vad(const std::vector<float> &audio) {
+  if (audio.empty())
+    return false;
+
+  float energy = 0.0f;
+  for (float sample : audio) {
+    energy += sample * sample;
+  }
+  energy /= audio.size();
+  printf("Audio energy: %.6f\n", energy);
+  return energy > 0.005f;
 }
 
 bool process_audio_with_retry(whisper_context *ctx,
@@ -203,13 +140,12 @@ void prune_context_tokens(std::vector<whisper_token> &tokens,
   tokens.erase(tokens.begin(), tokens.begin() + to_remove);
 }
 
-} // namespace
+}
 
 struct STTStream::Impl {
   whisper_params params;
   WhisperContext *ctx = nullptr;
   audio_async *audio = nullptr;
-  AdaptiveVAD *vad = nullptr;
 
   std::vector<float> pcmf32;
   std::vector<float> pcmf32_old;
@@ -218,19 +154,13 @@ struct STTStream::Impl {
 
   std::atomic<bool> initialized{false};
   std::atomic<bool> paused{false};
-  std::atomic<bool> running{false};
-  std::mutex state_mutex;
 
   int n_samples_step;
   int n_samples_len;
   int n_samples_keep;
   int n_samples_30s;
-  bool use_vad;
   int n_new_line;
   int n_iter = 0;
-
-  std::chrono::high_resolution_clock::time_point t_last;
-  std::chrono::high_resolution_clock::time_point t_start;
 
   ~Impl() {
     if (audio) {
@@ -239,15 +169,28 @@ struct STTStream::Impl {
     if (ctx) {
       delete ctx;
     }
-    if (vad) {
-      delete vad;
-    }
   }
 };
 
-STTStream::STTStream() : impl(new Impl()) {
-  std::lock_guard<std::mutex> lock(impl->state_mutex);
+// gotta add this to the cmake
+void STTStream::debug_state() const {
+  if (!impl || !impl->ctx)
+    return;
 
+  const int n_segments = whisper_full_n_segments(impl->ctx->get());
+  int total_tokens = 0;
+
+  for (int i = 0; i < n_segments; ++i) {
+    total_tokens += whisper_full_n_tokens(impl->ctx->get(), i);
+  }
+
+  fprintf(stderr, "DEBUG: n_iter=%d, pcmf32_old.size=%zu\n", impl->n_iter,
+          impl->pcmf32_old.size());
+  fprintf(stderr, "  segments=%d, tokens=%d, prompt_tokens=%zu\n", n_segments,
+          total_tokens, impl->prompt_tokens.size());
+}
+
+STTStream::STTStream() : impl(new Impl()) {
   ggml_backend_load_all();
 
   impl->params = get_default_params();
@@ -268,14 +211,10 @@ STTStream::STTStream() : impl(new Impl()) {
   impl->n_samples_keep = (1e-3 * impl->params.keep_ms) * WHISPER_SAMPLE_RATE;
   impl->n_samples_30s = (1e-3 * 30000.0) * WHISPER_SAMPLE_RATE;
 
-  impl->use_vad = impl->n_samples_step <= 0;
   impl->n_new_line =
-      !impl->use_vad
-          ? std::max(1, impl->params.length_ms / impl->params.step_ms - 1)
-          : 1;
+      std::max(1, impl->params.length_ms / impl->params.step_ms - 1);
 
-  impl->params.no_timestamps = !impl->use_vad;
-  impl->params.no_context |= impl->use_vad;
+  impl->params.no_timestamps = true;
   impl->params.max_tokens = 0;
 
   try {
@@ -299,8 +238,6 @@ STTStream::STTStream() : impl(new Impl()) {
     impl->pcmf32.resize(impl->n_samples_30s, 0.0f);
     impl->pcmf32_new.resize(impl->n_samples_30s, 0.0f);
 
-    impl->vad = new AdaptiveVAD(impl->params.vad_thold);
-
     if (!whisper_is_multilingual(impl->ctx->get())) {
       if (impl->params.language != "en" || impl->params.translate) {
         impl->params.language = "en";
@@ -309,10 +246,7 @@ STTStream::STTStream() : impl(new Impl()) {
     }
 
     impl->initialized = true;
-    impl->running = true;
     impl->paused = false;
-    impl->t_start = std::chrono::high_resolution_clock::now();
-    impl->t_last = impl->t_start;
 
     fprintf(stderr, "Stream initialized successfully\n");
     printf("[Start speaking]\n");
@@ -330,10 +264,6 @@ STTStream::STTStream() : impl(new Impl()) {
       delete impl->ctx;
       impl->ctx = nullptr;
     }
-    if (impl->vad) {
-      delete impl->vad;
-      impl->vad = nullptr;
-    }
 
     impl->pcmf32.clear();
     impl->pcmf32_new.clear();
@@ -344,103 +274,72 @@ STTStream::STTStream() : impl(new Impl()) {
 
 STTStream::~STTStream() {
   if (impl) {
-    impl->running = false;
     impl->initialized = false;
     delete impl;
   }
 }
 
+// for custom app manager
 bool STTStream::is_initialized() const { return impl && impl->initialized; }
 
-bool STTStream::listen_for(const std::string &trigger_word) {
+std::string STTStream::start_listening() {
   if (!impl->initialized) {
     fprintf(stderr, "ERROR: Stream not initialized\n");
-    return false;
+    return "";
   }
 
   if (impl->paused) {
-    return false;
+    return "";
   }
 
   bool got_quit = !sdl_poll_events();
   if (got_quit) {
-    impl->running = false;
-    return false;
+    return "";
   }
 
-  if (!impl->use_vad) {
-    while (true) {
-      if (!sdl_poll_events()) {
-        impl->running = false;
-        return false;
-      }
-
-      if (impl->paused) {
-        return false;
-      }
-
-      impl->audio->get(impl->params.step_ms, impl->pcmf32_new);
-
-      if ((int)impl->pcmf32_new.size() > 2 * impl->n_samples_step) {
-        impl->audio->clear();
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        continue;
-      }
-
-      if ((int)impl->pcmf32_new.size() >= impl->n_samples_step) {
-        impl->audio->clear();
-        break;
-      }
-
-      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  while (true) {
+    if (!sdl_poll_events()) {
+      return "";
     }
 
-    const int n_samples_new = impl->pcmf32_new.size();
-    const int n_samples_take =
-        std::min((int)impl->pcmf32_old.size(),
-                 std::max(0, impl->n_samples_keep + impl->n_samples_len -
-                                 n_samples_new));
-
-    impl->pcmf32.resize(n_samples_new + n_samples_take);
-
-    for (int i = 0; i < n_samples_take; i++) {
-      impl->pcmf32[i] =
-          impl->pcmf32_old[impl->pcmf32_old.size() - n_samples_take + i];
+    if (impl->paused) {
+      return "";
     }
 
-    memcpy(impl->pcmf32.data() + n_samples_take, impl->pcmf32_new.data(),
-           n_samples_new * sizeof(float));
-    impl->pcmf32_old = impl->pcmf32;
-  } else {
-    const auto t_now = std::chrono::high_resolution_clock::now();
-    const auto t_diff = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            t_now - impl->t_last)
-                            .count();
+    impl->audio->get(impl->params.step_ms, impl->pcmf32_new);
 
-    if (t_diff < 2000) {
-      return false;
+    if ((int)impl->pcmf32_new.size() > 2 * impl->n_samples_step) {
+      impl->audio->clear();
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      continue;
     }
 
-    impl->audio->get(2000, impl->pcmf32_new);
-
-    bool is_speech;
-    if (impl->params.adaptive_vad) {
-      is_speech = impl->vad->detect(impl->pcmf32_new, WHISPER_SAMPLE_RATE, 1000,
-                                    impl->params.freq_thold,
-                                    impl->params.vad_energy_thold);
-    } else {
-      is_speech =
-          ::vad_simple(impl->pcmf32_new, WHISPER_SAMPLE_RATE, 1000,
-                       impl->params.vad_thold, impl->params.freq_thold, false);
+    if ((int)impl->pcmf32_new.size() >= impl->n_samples_step) {
+      impl->audio->clear();
+      break;
     }
 
-    if (is_speech) {
-      impl->audio->get(impl->params.length_ms, impl->pcmf32);
-    } else {
-      return false;
-    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
 
-    impl->t_last = t_now;
+  const int n_samples_new = impl->pcmf32_new.size();
+  const int n_samples_take = std::min(
+      (int)impl->pcmf32_old.size(),
+      std::max(0, impl->n_samples_keep + impl->n_samples_len - n_samples_new));
+
+  impl->pcmf32.resize(n_samples_new + n_samples_take);
+
+  for (int i = 0; i < n_samples_take; i++) {
+    impl->pcmf32[i] =
+        impl->pcmf32_old[impl->pcmf32_old.size() - n_samples_take + i];
+  }
+
+  memcpy(impl->pcmf32.data() + n_samples_take, impl->pcmf32_new.data(),
+         n_samples_new * sizeof(float));
+  impl->pcmf32_old = impl->pcmf32;
+
+  if (!simple_vad(impl->pcmf32)) {
+    return "";
   }
 
   whisper_full_params wparams = whisper_full_default_params(
@@ -452,8 +351,8 @@ bool STTStream::listen_for(const std::string &trigger_word) {
   wparams.print_realtime = false;
   wparams.print_timestamps = !impl->params.no_timestamps;
   wparams.translate = impl->params.translate;
-  wparams.single_segment = !impl->use_vad;
   wparams.max_tokens = impl->params.max_tokens;
+  wparams.single_segment = true;
   wparams.language = impl->params.language.c_str();
   wparams.n_threads = impl->params.n_threads;
   wparams.beam_search.beam_size = impl->params.beam_size;
@@ -468,26 +367,12 @@ bool STTStream::listen_for(const std::string &trigger_word) {
 
   if (!process_audio_with_retry(impl->ctx->get(), wparams, impl->pcmf32,
                                 impl->params.max_retry_attempts)) {
-    return false;
+    return "";
   }
 
-  if (!impl->use_vad) {
-    printf("\33[2K\r");
-  } else {
-    const int64_t t1 = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           impl->t_last - impl->t_start)
-                           .count();
-    const int64_t t0 =
-        std::max(0.0, t1 - impl->pcmf32.size() * 1000.0 / WHISPER_SAMPLE_RATE);
-    printf("\n");
-    printf("### Transcription %d START | t0 = %d ms | t1 = %d ms", impl->n_iter,
-           (int)t0, (int)t1);
-    if (impl->params.adaptive_vad) {
-      printf(" | VAD threshold = %.3f", impl->vad->get_threshold());
-    }
-    printf("\n\n");
-  }
+  printf("\33[2K\r");
 
+  std::string full_text;
   const int n_segments = whisper_full_n_segments(impl->ctx->get());
   for (int i = 0; i < n_segments; ++i) {
     const char *text = whisper_full_get_segment_text(impl->ctx->get(), i);
@@ -512,20 +397,12 @@ bool STTStream::listen_for(const std::string &trigger_word) {
       fflush(stdout);
     }
 
-    if (contains_trigger(text, trigger_word)) {
-      impl->n_iter++;
-      return true;
-    }
-  }
-
-  if (impl->use_vad) {
-    printf("\n");
-    printf("### Transcription %d END\n", impl->n_iter);
+    full_text += text;
   }
 
   impl->n_iter++;
 
-  if (!impl->use_vad && (impl->n_iter % impl->n_new_line) == 0) {
+  if ((impl->n_iter % impl->n_new_line) == 0) {
     printf("\n");
     impl->pcmf32_old = std::vector<float>(
         impl->pcmf32.end() - impl->n_samples_keep, impl->pcmf32.end());
@@ -547,7 +424,14 @@ bool STTStream::listen_for(const std::string &trigger_word) {
     }
   }
 
-  return false;
+  return full_text;
+}
+
+bool STTStream::listen_for(const std::string &text,
+                           const std::string &trigger) {
+  std::string text_lower = to_lowercase(text);
+  std::string trigger_lower = to_lowercase(trigger);
+  return text_lower.find(trigger_lower) != std::string::npos;
 }
 
 void STTStream::pause() {
@@ -569,7 +453,7 @@ void STTStream::pause() {
 void STTStream::resume() {
   if (!impl)
     return;
-  
+
   impl->paused = false;
 
   if (impl->audio) {
@@ -580,5 +464,4 @@ void STTStream::resume() {
   impl->pcmf32.clear();
   impl->pcmf32_old.clear();
   impl->pcmf32_new.clear();
-
 }

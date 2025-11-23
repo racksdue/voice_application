@@ -8,6 +8,9 @@ sdl_player::sdl_player() {
 
 sdl_player::~sdl_player() {
   if (m_dev_id != 0) {
+    if(is_playing())
+      wait_to_finish();
+
     SDL_PauseAudioDevice(m_dev_id, 1);
     SDL_CloseAudioDevice(m_dev_id);
   }
@@ -20,7 +23,7 @@ bool sdl_player::init(int sample_rate) {
   wanted_spec.freq = sample_rate;
   wanted_spec.format = AUDIO_F32LSB; // 32-bit float, little-endian
   wanted_spec.channels = 1;          // Mono
-  wanted_spec.samples = 1024;        // A good buffer size
+  wanted_spec.samples = 2048;
   wanted_spec.callback = audio_callback_c;
   wanted_spec.userdata = this;
 
@@ -42,6 +45,8 @@ void sdl_player::play(const std::vector<float> &audio_data) {
   if (audio_data.empty() || m_dev_id == 0) {
     return;
   }
+  
+  std::lock_guard<std::mutex> lock(m_mutex);
 
   if (!m_is_playing) {
     m_buffer = audio_data;
@@ -54,7 +59,6 @@ void sdl_player::play(const std::vector<float> &audio_data) {
 }
 
 bool sdl_player::is_playing() const {
-  std::lock_guard<std::mutex> lock(m_mutex);
   return m_is_playing;
 }
 

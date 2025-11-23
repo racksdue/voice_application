@@ -2,8 +2,6 @@
 #include "sdl_player.hpp"
 #include <algorithm>
 #include <cstdio>
-#include <fstream>
-#include <iostream>
 #include <piper.h>
 #include <vector>
 
@@ -83,16 +81,6 @@ void TTSEngine::play(const std::string &text) {
     }
   }
 
-  std::ofstream audio("output.raw", std::ios::binary);
-  if (!audio) {
-    fprintf(stderr, "WARNING: Failed to write audio file\n");
-    return;
-  }
-
-  audio.write(reinterpret_cast<const char *>(all_samples.data()),
-              all_samples.size() * sizeof(float));
-  audio.close();
-  
   impl->player.play(all_samples);
 
   impl->player.wait_to_finish();

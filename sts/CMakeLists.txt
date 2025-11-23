@@ -17,7 +17,6 @@ add_subdirectory("${STT_ROOT}" stt_build)
 
 add_executable(demo_sts
     "${CMAKE_CURRENT_SOURCE_DIR}/examples/test.cpp"
-    engine_manager.hpp
 )
 
 
@@ -25,6 +24,7 @@ target_include_directories(demo_sts
     PRIVATE
         "${TTS_ROOT}"
         "${STT_ROOT}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
 target_link_libraries(demo_sts

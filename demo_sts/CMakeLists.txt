@@ -17,7 +17,9 @@ add_subdirectory("${STT_ROOT}" stt_build)
 
 add_executable(demo_sts
     test.cpp
+    app_manager.hpp
 )
+
 
 target_include_directories(demo_sts
     PRIVATE
@@ -27,7 +29,7 @@ target_include_directories(demo_sts
 
 target_link_libraries(demo_sts
     PRIVATE
-        tts_lib 
+        tts_lib
         stt_lib
 )
 

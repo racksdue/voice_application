@@ -1,4 +1,5 @@
 #include "tts_lib.hpp"
+#include "sdl_player.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
@@ -20,7 +21,7 @@ static const char *ESPEAK_PATH = TTS_ESPEAK_DIR;
 struct TTSEngine::Impl {
   piper_synthesizer *synth = nullptr;
   bool initialized = false;
-
+  sdl_player player;
   ~Impl() {
     if (synth) {
       piper_free(synth);
@@ -29,6 +30,11 @@ struct TTSEngine::Impl {
 };
 
 TTSEngine::TTSEngine() : impl(new Impl()) {
+  if (!impl->player.init(22050)) { // Piper's sample rate is 22050
+      fprintf(stderr, "ERROR: Failed to initialize SDL player\n");
+      return;
+  }
+
   impl->synth = piper_create(MODEL_PATH, JSON_PATH, ESPEAK_PATH);
 
   if (!impl->synth) {
@@ -86,7 +92,8 @@ void TTSEngine::play(const std::string &text) {
   audio.write(reinterpret_cast<const char *>(all_samples.data()),
               all_samples.size() * sizeof(float));
   audio.close();
+  
+  impl->player.play(all_samples);
 
-  system("ffplay -autoexit -nodisp -f f32le -ar 22050 -i output.raw >/dev/null "
-         "2>&1");
+  impl->player.wait_to_finish();
 }

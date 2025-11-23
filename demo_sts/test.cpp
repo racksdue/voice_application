@@ -1,22 +1,19 @@
+#include "app_manager.hpp"
 #include "stt_lib.hpp"
 #include "tts_lib.hpp"
-#include <chrono>
-#include <thread>
+#include <signal.h>
+
+volatile sig_atomic_t stop;
+
+void inthand(int signum) { stop = 1; }
 
 int main() {
-  TTSEngine tts;
+  signal(SIGINT, inthand);
 
-  if (!tts.is_initialized()) {
-    fprintf(stderr, "Initialization failed\n");
-    return 1;
-  }
+  AppManager manager;
 
-  STTStream stt;
-  
-  if (!stt.is_initialized()) {
-    fprintf(stderr, "Initialization failed\n");
-    return 1;
-  }
+  TTSEngine &tts = manager.get_tts();
+  STTStream &stt = manager.get_stt();
 
   while (true) {
     if (stt.listen_for("What is your name?")) {
@@ -34,7 +31,7 @@ int main() {
 
     if (stt.listen_for("Exit.")) {
       stt.pause();
-      tts.play("Have a nice day user!");
+      tts.play("Have a nice day, User!");
       break;
     }
 
@@ -44,7 +41,12 @@ int main() {
       stt.resume();
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (stt.listen_for("Enter debug mode.")) {
+      stt.pause();
+      tts.play("You are in debug mode. Say: Test cameras, Test sensors, or "
+               "Test all.");
+      stt.resume();
+    }
   }
 
   return 0;

@@ -115,7 +115,8 @@ public:
   WhisperContext(const char *model_path, const whisper_context_params &params) {
     ctx = whisper_init_from_file_with_params(model_path, params);
     if (!ctx) {
-      throw std::runtime_error("Failed to initialize whisper context. Check model param name.");
+      throw std::runtime_error(
+          "Failed to initialize whisper context. Check model param name.");
     }
   }
 
@@ -202,7 +203,7 @@ void prune_context_tokens(std::vector<whisper_token> &tokens,
   tokens.erase(tokens.begin(), tokens.begin() + to_remove);
 }
 
-}
+} // namespace
 
 struct STTStream::Impl {
   whisper_params params;
@@ -233,7 +234,6 @@ struct STTStream::Impl {
 
   ~Impl() {
     if (audio) {
-      audio->pause();
       delete audio;
     }
     if (ctx) {
@@ -392,7 +392,7 @@ bool STTStream::listen_for(const std::string &trigger_word) {
         break;
       }
 
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
 
     const int n_samples_new = impl->pcmf32_new.size();

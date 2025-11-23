@@ -4,7 +4,23 @@ project(tts_lib LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+find_package(SDL2 REQUIRED)
+
 add_subdirectory(external/piper)
+
+add_library(sdl_player STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/shared/src/sdl_player.cpp
+)
+
+target_include_directories(sdl_player
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/shared/include
+)
+
+target_link_libraries(sdl_player
+    PUBLIC
+        SDL2::SDL2
+)
 
 add_library(tts_lib STATIC
     tts_lib.cpp
@@ -13,6 +29,7 @@ add_library(tts_lib STATIC
 target_include_directories(tts_lib
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/shared/include
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/external/piper/include
 )
@@ -20,6 +37,7 @@ target_include_directories(tts_lib
 target_link_libraries(tts_lib
     PUBLIC
         piper
+        sdl_player
 )
 
 target_compile_definitions(tts_lib

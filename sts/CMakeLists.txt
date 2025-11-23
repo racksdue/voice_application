@@ -16,18 +16,20 @@ add_subdirectory("${TTS_ROOT}" tts_build)
 add_subdirectory("${STT_ROOT}" stt_build)
 
 add_executable(demo_sts
-    test.cpp
+    "${CMAKE_CURRENT_SOURCE_DIR}/examples/test.cpp"
 )
+
 
 target_include_directories(demo_sts
     PRIVATE
         "${TTS_ROOT}"
         "${STT_ROOT}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
 target_link_libraries(demo_sts
     PRIVATE
-        tts_lib 
+        tts_lib
         stt_lib
 )
 

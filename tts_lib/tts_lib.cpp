@@ -1,16 +1,13 @@
 #include "tts_lib.hpp"
-#include <chrono>
-#include <cstdlib>
-#include <fstream>
-#include <iostream>
+#include "sdl_player.hpp"
+#include <algorithm>
+#include <cstdio>
 #include <piper.h>
-
-static piper_synthesizer *g_synth = nullptr;
+#include <vector>
 
 #ifndef TTS_MODEL_DIR
 #define TTS_MODEL_DIR "models"
 #endif
-
 #ifndef TTS_ESPEAK_DIR
 #define TTS_ESPEAK_DIR "../install/espeak-ng-data"
 #endif
@@ -19,35 +16,57 @@ static const char *MODEL_PATH = TTS_MODEL_DIR "/en_US-hfc_male-medium.onnx";
 static const char *JSON_PATH = TTS_MODEL_DIR "/en_US-hfc_male-medium.onnx.json";
 static const char *ESPEAK_PATH = TTS_ESPEAK_DIR;
 
-static void tts_auto_shutdown() {
-  if (g_synth) {
-    piper_free(g_synth);
-    g_synth = nullptr;
-  }
-}
-
-static void tts_auto_init() {
-  if (!g_synth) {
-    g_synth = piper_create(MODEL_PATH, JSON_PATH, ESPEAK_PATH);
-    if (!g_synth) {
-      std::cerr << "Failed to initialize piper model.\n";
-      std::abort();
+struct TTSEngine::Impl {
+  piper_synthesizer *synth = nullptr;
+  bool initialized = false;
+  sdl_player player;
+  ~Impl() {
+    if (synth) {
+      piper_free(synth);
     }
-    std::atexit(tts_auto_shutdown);
   }
+};
+
+TTSEngine::TTSEngine() : impl(new Impl()) {
+  if (!impl->player.init(22050)) { // Piper's sample rate is 22050
+      fprintf(stderr, "ERROR: Failed to initialize SDL player\n");
+      return;
+  }
+
+  impl->synth = piper_create(MODEL_PATH, JSON_PATH, ESPEAK_PATH);
+
+  if (!impl->synth) {
+    fprintf(stderr, "ERROR: Failed to create piper synthesizer\n");
+    return;
+  }
+
+  impl->initialized = true;
 }
 
-void play_audio(const std::string &text) {
-  tts_auto_init();
+TTSEngine::~TTSEngine() { delete impl; }
 
-  piper_synthesize_options opts = piper_default_synthesize_options(g_synth);
-  piper_synthesize_start(g_synth, text.c_str(), &opts);
+bool TTSEngine::is_initialized() const { return impl && impl->initialized; }
+
+void TTSEngine::play(const std::string &text) {
+  if (!impl || !impl->synth) {
+    fprintf(stderr, "ERROR: TTS not initialized\n");
+    return;
+  }
+
+  piper_synthesize_options opts = piper_default_synthesize_options(impl->synth);
+  piper_synthesize_start(impl->synth, text.c_str(), &opts);
 
   std::vector<float> all_samples;
   piper_audio_chunk chunk;
-  while (piper_synthesize_next(g_synth, &chunk) != PIPER_DONE) {
+
+  while (piper_synthesize_next(impl->synth, &chunk) != PIPER_DONE) {
     all_samples.insert(all_samples.end(), chunk.samples,
                        chunk.samples + chunk.num_samples);
+  }
+
+  if (all_samples.empty()) {
+    fprintf(stderr, "WARNING: No audio generated\n");
+    return;
   }
 
   float max_val = 0.0f;
@@ -62,11 +81,7 @@ void play_audio(const std::string &text) {
     }
   }
 
-  std::ofstream audio("output.raw", std::ios::binary);
-  audio.write(reinterpret_cast<const char *>(all_samples.data()),
-              all_samples.size() * sizeof(float));
-  audio.close();
+  impl->player.play(all_samples);
 
-  system("ffplay -autoexit -nodisp -f f32le -ar 22050 -i output.raw >/dev/null "
-         "2>&1");
+  impl->player.wait_to_finish();
 }

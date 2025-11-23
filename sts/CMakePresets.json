@@ -13,7 +13,7 @@
       "binaryDir": "build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_INSTALL_PREFIX": "${sourceDir}/install",
+        "WHISPER_SDL2": "On",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
@@ -24,7 +24,6 @@
       "binaryDir": "build/debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_INSTALL_PREFIX": "${sourceDir}/install",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     }
@@ -33,11 +32,14 @@
   "buildPresets": [
     {
       "name": "release",
-      "configurePreset": "release"
+      "configurePreset": "release",
+      "jobs": 0
     },
     {
       "name": "debug",
-      "configurePreset": "debug"
+      "configurePreset": "debug",
+      "jobs": 0
     }
   ]
 }
+

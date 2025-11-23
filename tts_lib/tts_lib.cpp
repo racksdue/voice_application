@@ -50,7 +50,7 @@ TTSEngine::~TTSEngine() { delete impl; }
 bool TTSEngine::is_initialized() const { return impl && impl->initialized; }
 
 void TTSEngine::play(const std::string &text) {
-  if (!impl->synth) {
+  if (!impl || !impl->synth) {
     fprintf(stderr, "ERROR: TTS not initialized\n");
     return;
   }

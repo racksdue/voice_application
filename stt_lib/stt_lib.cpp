@@ -569,6 +569,8 @@ void STTStream::pause() {
 void STTStream::resume() {
   if (!impl)
     return;
+  
+  impl->paused = false;
 
   if (impl->audio) {
     impl->audio->clear();
@@ -579,5 +581,4 @@ void STTStream::resume() {
   impl->pcmf32_old.clear();
   impl->pcmf32_new.clear();
 
-  impl->paused = false;
 }

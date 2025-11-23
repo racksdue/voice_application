@@ -16,8 +16,8 @@ add_subdirectory("${TTS_ROOT}" tts_build)
 add_subdirectory("${STT_ROOT}" stt_build)
 
 add_executable(demo_sts
-    test.cpp
-    app_manager.hpp
+    "${CMAKE_CURRENT_SOURCE_DIR}/examples/test.cpp"
+    engine_manager.hpp
 )
 
 

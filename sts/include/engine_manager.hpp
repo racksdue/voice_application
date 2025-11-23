@@ -4,6 +4,7 @@
 #include "stt_lib.hpp"
 #include <SDL.h>
 #include <stdexcept>
+#include <string>
 #include <iostream>
 
 class AppManager {

@@ -109,7 +109,7 @@ bool simple_vad(const std::vector<float> &audio) {
   energy /= audio.size();
   // TODO: Make adaptive frequency class
   printf("Audio energy: %.6f\n", energy);
-  return energy > 0.0003f;
+  return energy > 0.015f;
 }
 
 bool process_audio_with_retry(whisper_context *ctx,

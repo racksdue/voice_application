@@ -7,9 +7,9 @@
 #include <string>
 #include <iostream>
 
-class AppManager {
+class EngineManager {
 public:
-    AppManager() {
+    EngineManager() {
       
         // Need sequential check tts has to start first(i don't know why)
         if (!m_tts.is_initialized()) {
@@ -23,7 +23,7 @@ public:
         std::cout << "System is ready." << std::endl;
     }
 
-    ~AppManager() {
+    ~EngineManager() {
     }
 
     TTSEngine& get_tts() { return m_tts; }

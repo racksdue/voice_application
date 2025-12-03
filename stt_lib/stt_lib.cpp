@@ -68,21 +68,21 @@ public:
 
 whisper_params get_default_params() {
   whisper_params params;
-  params.n_threads = std::min(2, (int32_t)std::thread::hardware_concurrency());
-  params.step_ms = 1500;
-  params.length_ms = 4000;
-  params.keep_ms = 300;
+  params.n_threads = 4;
+  params.step_ms = 1000;
+  params.length_ms = 2000;
+  params.keep_ms = 0;
   params.capture_id = -1;
-  params.max_tokens = 32;
+  params.max_tokens = 16;
   params.audio_ctx = 0;
   params.beam_size = -1;
-  params.max_context_tokens = 64;
+  params.max_context_tokens = 16;
   params.max_retry_attempts = 2;
   params.translate = false;
-  params.no_fallback = false;
+  params.no_fallback = true;
   params.print_special = false;
   params.no_context = true;
-  params.no_timestamps = false;
+  params.no_timestamps = true;
   params.tinydiarize = false;
   params.use_gpu = true;
   params.flash_attn = true;
@@ -107,8 +107,9 @@ bool simple_vad(const std::vector<float> &audio) {
     energy += sample * sample;
   }
   energy /= audio.size();
+  // TODO: Make adaptive frequency class
   printf("Audio energy: %.6f\n", energy);
-  return energy > 0.005f;
+  return energy > 0.0003f;
 }
 
 bool process_audio_with_retry(whisper_context *ctx,
@@ -248,10 +249,6 @@ STTStream::STTStream() : impl(new Impl()) {
     impl->initialized = true;
     impl->paused = false;
 
-    fprintf(stderr, "Stream initialized successfully\n");
-    printf("[Start speaking]\n");
-    fflush(stdout);
-
   } catch (const std::exception &e) {
     fprintf(stderr, "ERROR: Failed to initialize stream: %s\n", e.what());
 
@@ -279,7 +276,7 @@ STTStream::~STTStream() {
   }
 }
 
-// for custom app manager
+// for the engine manager
 bool STTStream::is_initialized() const { return impl && impl->initialized; }
 
 std::string STTStream::start_listening() {

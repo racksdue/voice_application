@@ -1,7 +1,7 @@
 #include "engine_manager.hpp"
 
 int main() {
-  AppManager sts_engine;
+  EngineManager sts_engine;
 
   TTSEngine &tts = sts_engine.get_tts();
   STTStream &stt = sts_engine.get_stt();

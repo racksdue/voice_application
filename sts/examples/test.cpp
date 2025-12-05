@@ -1,62 +1,212 @@
 #include "engine_manager.hpp"
+#include <chrono>
+#include <thread>
+#include <iomanip>
+
+enum class NavState {
+  STOPPED,
+  ACTIVE,
+  PAUSED
+};
+
+enum class ManeuverType {
+  TURN_LEFT,
+  TURN_RIGHT,
+  CONTINUE_STRAIGHT,
+  ARRIVE
+};
+
+struct Maneuver {
+  ManeuverType type;
+  double distance_to_maneuver;
+  std::string instruction;
+  bool early_announced = false;
+  bool prepare_announced = false;
+  bool commit_announced = false;
+  std::chrono::steady_clock::time_point early_announce_time;
+  std::chrono::steady_clock::time_point prepare_announce_time;
+};
+
+std::string get_instruction(ManeuverType type) {
+  switch (type) {
+    case ManeuverType::TURN_LEFT:
+      return "Turn left";
+    case ManeuverType::TURN_RIGHT:
+      return "Turn right";
+    case ManeuverType::CONTINUE_STRAIGHT:
+      return "Continue straight";
+    case ManeuverType::ARRIVE:
+      return "You have arrived at your destination";
+    default:
+      return "Continue";
+  }
+}
+
+void announce_stage(Maneuver &maneuver, const std::string &stage_name, 
+                   const std::string &message, TTSEngine &tts, STTStream &stt) {
+  auto start = std::chrono::steady_clock::now();
+  
+  stt.pause();
+  std::cout << "[" << stage_name << " - " 
+            << std::fixed << std::setprecision(1) 
+            << maneuver.distance_to_maneuver << "m] ";
+  tts.play(message);
+  
+  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - start).count();
+  std::cout << "(responded in " << elapsed << "ms)" << std::endl;
+  
+  stt.resume();
+}
 
 int main() {
   AppManager sts_engine;
-
   TTSEngine &tts = sts_engine.get_tts();
   STTStream &stt = sts_engine.get_stt();
-
+  
+  NavState state = NavState::STOPPED;
+  const double WALKING_SPEED_MPS = 1.4;
+  const double DEMO_SPEEDUP = 5.0;
+  
+  std::vector<Maneuver> route = {
+    {ManeuverType::TURN_LEFT, 15.0, get_instruction(ManeuverType::TURN_LEFT)},
+    {ManeuverType::TURN_RIGHT, 30.0, get_instruction(ManeuverType::TURN_RIGHT)},
+    {ManeuverType::ARRIVE, 45.0, get_instruction(ManeuverType::ARRIVE)}
+  };
+  
+  size_t current_maneuver_index = 0;
+  auto last_update_time = std::chrono::steady_clock::now();
+  bool first_maneuver_announced = false;
+  
+  std::cout << "Walking speed: " << WALKING_SPEED_MPS << " m/s" << std::endl;
+  std::cout << "Demo speed: " << DEMO_SPEEDUP << "x\n" << std::endl;
+  
+  stt.pause();
+  tts.play("Navigation assistant ready. Say Start navigation to begin.");
+  stt.resume();
+  
   while (true) {
     std::string transcription = stt.start_listening();
-
-    if (stt.listen_for(transcription, "What is your name?")) {
+    auto command_time = std::chrono::steady_clock::now();
+    
+    if (stt.listen_for(transcription, "Start navigation")) {
       stt.pause();
-      tts.play("I am a navigation assistant for the blind! To use me say: "
-               "Start navigation");
-      stt.resume();
-    } else if (stt.listen_for(transcription, "Start navigation")) {
-      stt.pause();
-      tts.play("Navigation started, you are en route.");
-      stt.resume();
-    } else if (stt.listen_for(transcription, "Exit")) {
-      stt.pause();
-      tts.play("Goodbye!");
-      break;
-    } else if (STTStream::listen_for(transcription, "test speech")) {
-      stt.pause();
-      tts.play(
-          "Testing text to speech engine with extended audio playback. "
-          "The quick brown fox jumps over the lazy dog near the bank of the "
-          "river. "
-          "Pack my box with five dozen liquor jugs for the evening "
-          "celebration. "
-          "How vexingly quick daft zebras jump through the misty morning fog. "
-          "Now testing numerical sequences: one two three four five six seven "
-          "eight nine ten. "
-          "Counting backwards: ten nine eight seven six five four three two "
-          "one zero. "
-          "Testing punctuation and pauses. Comma pause, semicolon pause; colon "
-          "pause: question mark pause? "
-          "Exclamation mark pause! Period pAuSe(). Multiple sentences in "
-          "sequence without interruption. "
-          "The navigation system is designed to assist blind users with "
-          "real time audio feedback. "
-          "It processes voice commands and provides directional guidance "
-          "through spoken instructions. "
-          "Turn left at the next intersection. Continue straight for two "
-          "hundred meters. "
-          "You are approaching your destination on the right side. Proceed "
-          "with caution. "
-          "Testing longer duration audio to verify buffer stability and voice "
-          "quality consistency. "
-          "The system should maintain clear pronunciation throughout extended "
-          "speech sequences. "
-          "No audio artifacts or dropouts should occur during continuous "
-          "playback operations. "
-          "This concludes the text to speech engine stress test. All systems "
-          "nominal. Test complete.");
+      if (state == NavState::STOPPED || state == NavState::PAUSED) {
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - command_time).count();
+        std::cout << "[COMMAND: Start navigation] (confirmed in " 
+                  << elapsed << "ms)\n" << std::endl;
+        
+        if (state == NavState::STOPPED) {
+          tts.play("Navigation started. Proceeding to destination.");
+          current_maneuver_index = 0;
+          first_maneuver_announced = false;
+        } else {
+          tts.play("Navigation resumed.");
+        }
+        
+        state = NavState::ACTIVE;
+        last_update_time = std::chrono::steady_clock::now();
+      } else {
+        tts.play("Navigation is already active.");
+      }
       stt.resume();
     }
+    
+    else if (stt.listen_for(transcription, "Pause navigation")) {
+      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - command_time).count();
+      stt.pause();
+      std::cout << "[COMMAND: Pause navigation] (confirmed in " 
+                << elapsed << "ms)\n" << std::endl;
+      if (state == NavState::ACTIVE) {
+        state = NavState::PAUSED;
+        tts.play("Navigation paused. Say Start navigation to resume.");
+      } else {
+        tts.play("Navigation is not active.");
+      }
+      stt.resume();
+    }
+    
+    else if (stt.listen_for(transcription, "Stop navigation")) {
+      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - command_time).count();
+      stt.pause();
+      std::cout << "[COMMAND: Stop navigation] (confirmed in " 
+                << elapsed << "ms)\n" << std::endl;
+      state = NavState::STOPPED;
+      tts.play("Navigation stopped. Goodbye!");
+      stt.resume();
+      break;
+    }
+    
+    if (state == NavState::ACTIVE && current_maneuver_index < route.size()) {
+      auto current_time = std::chrono::steady_clock::now();
+      double dt = std::chrono::duration<double>(current_time - last_update_time).count();
+      last_update_time = current_time;
+      
+      Maneuver &maneuver = route[current_maneuver_index];
+      
+      if (!first_maneuver_announced) {
+        std::cout << "Approaching maneuver: " << maneuver.instruction 
+                  << " (" << std::fixed << std::setprecision(1) 
+                  << maneuver.distance_to_maneuver << "m away)\n" << std::endl;
+        first_maneuver_announced = true;
+      }
+      
+      double early_threshold = WALKING_SPEED_MPS * 5.0;
+      double prepare_threshold = WALKING_SPEED_MPS * 2.0;
+      double commit_threshold = 1.0;
+      
+      maneuver.distance_to_maneuver -= (WALKING_SPEED_MPS * DEMO_SPEEDUP * dt);
+      
+      if (!maneuver.early_announced && maneuver.distance_to_maneuver <= early_threshold) {
+        announce_stage(maneuver, "EARLY SIGNAL", 
+                     "In 5 seconds, " + maneuver.instruction, tts, stt);
+        maneuver.early_announced = true;
+        maneuver.early_announce_time = std::chrono::steady_clock::now();
+      }
+      
+      else if (maneuver.early_announced && !maneuver.prepare_announced) {
+        auto time_since_early = std::chrono::duration<double>(
+            current_time - maneuver.early_announce_time).count();
+        
+        if (time_since_early >= 3.0 && maneuver.distance_to_maneuver <= prepare_threshold) {
+          announce_stage(maneuver, "PREPARE STAGE", 
+                       "Prepare to " + maneuver.instruction, tts, stt);
+          maneuver.prepare_announced = true;
+          maneuver.prepare_announce_time = std::chrono::steady_clock::now();
+        }
+      }
+      
+      else if (maneuver.prepare_announced && !maneuver.commit_announced) {
+        auto time_since_prepare = std::chrono::duration<double>(
+            current_time - maneuver.prepare_announce_time).count();
+        
+        if (time_since_prepare >= 2.0 && maneuver.distance_to_maneuver <= commit_threshold) {
+          announce_stage(maneuver, "COMMIT STAGE", 
+                       maneuver.instruction + " now", tts, stt);
+          maneuver.commit_announced = true;
+          
+          current_maneuver_index++;
+          
+          if (current_maneuver_index >= route.size()) {
+            state = NavState::STOPPED;
+            stt.pause();
+            std::cout << "\n[NAVIGATION COMPLETE]" << std::endl;
+            tts.play("Navigation complete. You have reached your destination.");
+            stt.resume();
+            break;
+          } else {
+            first_maneuver_announced = false;
+            std::cout << "\nApproaching maneuver: " << route[current_maneuver_index].instruction 
+                      << " (" << std::fixed << std::setprecision(1) 
+                      << route[current_maneuver_index].distance_to_maneuver << "m away)\n" << std::endl;
+          }
+        }
+      }
+    }
   }
+  
   return 0;
 }
